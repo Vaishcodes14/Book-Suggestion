@@ -3,20 +3,16 @@ pandas
 numpy
 scikit-learn
 
-# Web UI
-streamlit
-
-# NLP Processing
+# NLP
 nltk
 spacy
-
-# Sentiment Analysis
 textblob
 vaderSentiment
 
-# Advanced Embeddings (for future)
+# Transformers (use CPU-safe versions)
+torch==2.2.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
 transformers
-torch
+sentence-transformers
 
-pip install -r requirements.txt
-python -m spacy download en_core_web_sm
+# Web UI
+streamlit
