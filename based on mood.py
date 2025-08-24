@@ -1,30 +1,66 @@
 import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
 
-# Step 1: Download dataset (you can replace with direct CSV link if you already have it)
-# Example link from OpenBigData (Goodreads dataset)
-url = "https://github.com/zygmuntz/goodbooks-10k/raw/master/books.csv"
+# -------------------------------
+# Step 1: Load Dataset
+# -------------------------------
+# Your dataset must have columns: title, authors, Summary
+books_df = pd.read_csv("books_dataset.csv")
 
-# Step 2: Load the dataset
-df = pd.read_csv(url)
+if "Summary" not in books_df.columns:
+    books_df["Summary"] = "No description available."
 
-print("Original Columns:", df.columns)
-print("Total Books in raw dataset:", len(df))
+# -------------------------------
+# Step 2: Mood → Emotion Mapping
+# -------------------------------
+mood_map = {
+    "happy": "celebration joy positivity success gratitude",
+    "sad": "comfort hope healing motivation overcoming struggles",
+    "anxious": "calm mindfulness peace relaxation stress relief",
+    "stressed": "balance productivity resilience peace work-life",
+    "motivated": "growth achievement inspiration leadership success",
+    "lonely": "friendship connection belonging relationships empathy",
+    "angry": "patience forgiveness calmness letting go peace",
+    "lost": "self-discovery purpose meaning direction life journey"
+}
 
-# Step 3: Keep only relevant columns
-# Note: Adjust column names if needed (some datasets may have slightly different ones)
-columns_to_keep = ["book_id", "title", "authors", "original_publication_year", 
-                   "average_rating", "ratings_count", "small_image_url"]
+# -------------------------------
+# Step 3: Load Transformer Model
+# -------------------------------
+print("🔄 Loading transformer model... (this may take a minute)")
+model = SentenceTransformer("all-MiniLM-L6-v2")  # Small & fast, good quality
 
-books_df = df[columns_to_keep]
+# -------------------------------
+# Step 4: Encode Book Summaries
+# -------------------------------
+print("🔄 Encoding book summaries...")
+book_embeddings = model.encode(books_df["Summary"].fillna(""), show_progress_bar=True)
 
-# Step 4: Add placeholder "Summary" (since original goodbooks-10k doesn't have descriptions)
-# You can later enrich this with scraped/other metadata
-books_df["Summary"] = "No description available yet."
+# -------------------------------
+# Step 5: Recommendation Function
+# -------------------------------
+def recommend_books(user_mood, top_n=5):
+    if user_mood not in mood_map:
+        return f"❌ Mood '{user_mood}' not recognized. Try: {list(mood_map.keys())}"
 
-# Step 5: Clean data (drop duplicates & nulls)
-books_df = books_df.dropna().drop_duplicates(subset="title")
+    # Convert mood into embedding
+    mood_text = mood_map[user_mood]
+    mood_embedding = model.encode([mood_text])
 
-# Step 6: Save cleaned dataset
-books_df.to_csv("books_dataset.csv", index=False, encoding="utf-8")
+    # Compute cosine similarity
+    similarities = cosine_similarity(mood_embedding, book_embeddings).flatten()
 
-print(f"✅ Clean dataset saved as 'books_dataset.csv' with {len(books_df)} books.")
+    # Get top N book indices
+    top_indices = similarities.argsort()[-top_n:][::-1]
+
+    # Return recommendations
+    recommendations = books_df.iloc[top_indices][["title", "authors", "Summary"]]
+    return recommendations
+
+# -------------------------------
+# Step 6: Test
+# -------------------------------
+user_mood = "anxious"  # try "happy", "sad", etc.
+print(f"\n📖 Top Book Recommendations for mood: {user_mood}\n")
+print(recommend_books(user_mood, top_n=5))
