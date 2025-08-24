@@ -1,0 +1,22 @@
+# Core
+pandas
+numpy
+scikit-learn
+
+# Web UI
+streamlit
+
+# NLP Processing
+nltk
+spacy
+
+# Sentiment Analysis
+textblob
+vaderSentiment
+
+# Advanced Embeddings (for future)
+transformers
+torch
+
+pip install -r requirements.txt
+python -m spacy download en_core_web_sm
