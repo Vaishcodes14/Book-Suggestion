@@ -1,18 +1,7 @@
-# Core
-pandas
-numpy
-scikit-learn
-
-# NLP
-nltk
-spacy
-textblob
-vaderSentiment
-
-# Transformers (use CPU-safe versions)
-torch==2.2.2+cpu --extra-index-url https://download.pytorch.org/whl/cpu
-transformers
-sentence-transformers
-
-# Web UI
-streamlit
+pandas==2.2.2
+numpy==1.26.4
+scikit-learn==1.5.1
+streamlit==1.37.0
+transformers==4.44.0
+torch==2.4.0
+sentence-transformers==3.0.1
