@@ -1,126 +1,77 @@
 import streamlit as st
 import pandas as pd
+import os
+import joblib
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import pipeline
 
-# ----------------------------
-# Load dataset
-# ----------------------------
+DATA_PATH = "books_50k.csv"
+PARQUET_PATH = "books_50k.parquet"
+VEC_PATH = "vectorizer.pkl"
+TFIDF_PATH = "tfidf_matrix.pkl"
+
+# ---------- Data Loading ----------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("books_50k.csv")
-    return df
-
-books_df = load_data()
-
-# ----------------------------
-# Preprocess: Combined text field
-# ----------------------------
-books_df["combined"] = (
-    books_df["Title"].fillna("") + " " +
-    books_df["Subjects"].fillna("") + " " +
-    books_df["Bookshelves"].fillna("") + " " +
-    books_df["Authors"].fillna("")
-)
-
-# ----------------------------
-# NLP Model Setup
-# ----------------------------
-vectorizer = TfidfVectorizer(stop_words="english")
-tfidf_matrix = vectorizer.fit_transform(books_df["combined"])
-
-# Load HuggingFace Emotion Classifier
-@st.cache_resource
-def load_emotion_model():
-    return pipeline("text-classification", 
-                    model="cardiffnlp/twitter-roberta-base-emotion", 
-                    return_all_scores=True)
-
-emotion_model = load_emotion_model()
-
-# ----------------------------
-# Emotion → Bookshelves Mapping
-# ----------------------------
-emotion_to_bookshelves = {
-    "joy": ["Fiction", "Adventure", "Fantasy", "Poetry"],
-    "sadness": ["Philosophy", "Poetry", "Biography"],
-    "anger": ["Politics", "History", "Philosophy"],
-    "fear": ["Religion", "Philosophy", "Science"],
-    "surprise": ["Science", "Adventure", "Fantasy"]
-}
-
-# ----------------------------
-# Helper Function: Detect Emotion
-# ----------------------------
-def detect_emotion(text):
-    results = emotion_model(text)[0]
-    results = sorted(results, key=lambda x: x["score"], reverse=True)
-    return results[0]["label"], results[0]["score"]
-
-# ----------------------------
-# Helper Function: Get Recommendations
-# ----------------------------
-def get_recommendations(user_input, top_n=5):
-    detected_emotion, confidence = detect_emotion(user_input)
-    mapped_bookshelves = emotion_to_bookshelves.get(detected_emotion.lower(), [])
-    
-    # Filter books by mapped shelves first
-    if mapped_bookshelves:
-        filtered_books = books_df[
-            books_df["Bookshelves"].isin(mapped_bookshelves)
-        ]
+    # If parquet already exists, load that (faster)
+    if os.path.exists(PARQUET_PATH):
+        return pd.read_parquet(PARQUET_PATH)
     else:
-        filtered_books = books_df
-    
-    if filtered_books.empty:
-        filtered_books = books_df
+        df = pd.read_csv(DATA_PATH)
+        df.to_parquet(PARQUET_PATH, index=False)
+        return df
 
-    # Vectorize input
-    user_vec = vectorizer.transform([user_input])
-    sim_scores = cosine_similarity(user_vec, tfidf_matrix).flatten()
-    
-    # Get top indices within filtered set
-    top_indices = sim_scores.argsort()[-top_n:][::-1]
-    
-    return detected_emotion, confidence, books_df.iloc[top_indices][
-        ["Title", "Authors", "Language", "Bookshelves", "Subjects", "Rights"]
-    ]
+@st.cache_resource
+def load_tfidf(df):
+    if os.path.exists(VEC_PATH) and os.path.exists(TFIDF_PATH):
+        vectorizer = joblib.load(VEC_PATH)
+        tfidf_matrix = joblib.load(TFIDF_PATH)
+    else:
+        df["text"] = df["Title"].astype(str) + " " + df["Subjects"].astype(str)
+        vectorizer = TfidfVectorizer(stop_words="english", max_features=10000)
+        tfidf_matrix = vectorizer.fit_transform(df["text"])
+        joblib.dump(vectorizer, VEC_PATH)
+        joblib.dump(tfidf_matrix, TFIDF_PATH)
+    return vectorizer, tfidf_matrix
 
-# ----------------------------
-# Streamlit UI
-# ----------------------------
-st.title("📚 Emotion-Aware Bibliotherapy Recommender")
-st.write("Books chosen based on your **mood, life events, and emotions** ❤️📖")
+@st.cache_resource
+def load_model():
+    return pipeline("text-classification", 
+                    model="bhadresh-savani/distilbert-base-uncased-emotion")
+
+# ---------- Main App ----------
+st.title("📚 Sentiment-Driven Book Recommendation")
+st.write("Bibliotherapy: Book suggestions based on your mood or life events.")
+
+# Load dataset & models
+df = load_data()
+vectorizer, tfidf_matrix = load_tfidf(df)
+emotion_model = load_model()
 
 # User input
-user_input = st.text_input("How are you feeling or what’s happening in your life?")
+user_event = st.text_area("Describe your mood or situation:", 
+                          "I feel stressed and need motivation.")
 
-if st.button("Get Book Suggestions"):
-    if user_input.strip():
-        detected_emotion, confidence, results = get_recommendations(user_input, top_n=5)
-        st.subheader(f"😊 Detected Emotion: **{detected_emotion.capitalize()}** (confidence: {confidence:.2f})")
-        st.subheader("📖 Recommended Books for You")
-        for i, row in results.iterrows():
-            st.markdown(f"""
-            **{row['Title']}**  
-            👤 *{row['Authors']}*  
-            🌍 Language: {row['Language']}  
-            📂 Bookshelves: {row['Bookshelves']}  
-            🏷 Subjects: {row['Subjects']}  
-            ⚖ Rights: {row['Rights']}  
-            """)
-    else:
-        st.warning("Please describe your mood or life event.")
+if st.button("Find Books"):
+    with st.spinner("Analyzing your emotion..."):
+        emotions = emotion_model(user_event, top_k=1)
+        emotion = emotions[0]["label"]
 
-# Optional: Surprise Me
-if st.button("🎲 Surprise Me"):
-    rand_row = books_df.sample(1).iloc[0]
-    st.markdown(f"""
-    **{rand_row['Title']}**  
-    👤 *{rand_row['Authors']}*  
-    🌍 Language: {rand_row['Language']}  
-    📂 Bookshelves: {rand_row['Bookshelves']}  
-    🏷 Subjects: {rand_row['Subjects']}  
-    ⚖ Rights: {rand_row['Rights']}  
-    """)
+    st.subheader(f"Detected Emotion: {emotion}")
+
+    # Compute similarity
+    user_vector = vectorizer.transform([user_event])
+    similarities = cosine_similarity(user_vector, tfidf_matrix).flatten()
+    top_indices = similarities.argsort()[-5:][::-1]
+
+    recommendations = df.iloc[top_indices][["Title", "Authors", "Subjects", "Bookshelves"]]
+
+    st.subheader("📖 Recommended Books:")
+    for _, row in recommendations.iterrows():
+        st.markdown(f"""
+        - **{row['Title']}**  
+          👤 Author: {row['Authors']}  
+          🏷️ Subject: {row['Subjects']}  
+          📚 Shelf: {row['Bookshelves']}
+        """)
