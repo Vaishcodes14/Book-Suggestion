@@ -5,3 +5,4 @@ transformers==4.44.2
 torch==2.4.1
 sentencepiece==0.2.0
 protobuf==5.28.2
+joblib==1.4.2
